@@ -6,7 +6,7 @@ FROM ${BASE_IMAGE}
 
 RUN apk add --update --no-cache tar
 
-ENV GRAFANA_VERSION=7.3.6
+ENV GRAFANA_VERSION=7.5.0
 ENV GRAFANA_TGZ=grafana-${GRAFANA_VERSION}.linux-amd64.tar.gz
 ENV GRAFANA_TGZ_SOURCE=https://dl.grafana.com/oss/release/${GRAFANA_TGZ}
 
