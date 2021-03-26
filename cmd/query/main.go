@@ -5,14 +5,12 @@ import (
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend/datasource"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
+
+	bqsource "github.com/Shopify/bigquery-grafana/pkg/datasource"
 )
 
 func main() {
-	// log.DefaultLogger.Info("lior test")
-	// Start listening to requests send from Grafana. This call is blocking so
-	// it wont finish until Grafana shutsdown the process or the plugin choose
-	// to exit close down by itself
-	err := datasource.Serve(newDatasource())
+	err := datasource.Serve(bqsource.New(log.New()))
 
 	// Log any error if we could start the plugin.
 	if err != nil {
