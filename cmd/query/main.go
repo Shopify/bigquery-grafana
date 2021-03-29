@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	err := datasource.Serve(bqsource.New(log.New()))
+	err := datasource.Serve(bqsource.New())
 
 	// Log any error if we could start the plugin.
 	if err != nil {

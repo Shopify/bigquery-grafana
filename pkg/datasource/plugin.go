@@ -30,7 +30,7 @@ type TransformedResults struct {
 }
 
 type queryModel struct {
-	Format string `json:"format"`
+	Format           string `json:"format"`
 	Dataset          string   `json:"dataset"`
 	Group            []string `json:"group"`
 	MetricColumn     string   `json:"metricColumn"`
@@ -65,15 +65,13 @@ func (s *instanceSettings) Dispose() {}
 // BigQueryDatasource is an example datasource used to scaffold
 // new datasource plugins with an backend.
 type BigQueryDatasource struct {
-	log.Logger
 	im instancemgmt.InstanceManager
 }
 
 // New creates a datasource that is sued for querying BigQuery
-func New(logger log.Logger) datasource.ServeOpts {
+func New() datasource.ServeOpts {
 	im := datasource.NewInstanceManager(newDataSourceInstance)
 	ds := &BigQueryDatasource{
-		Logger: logger,
 		im: im,
 	}
 
@@ -83,6 +81,8 @@ func New(logger log.Logger) datasource.ServeOpts {
 	}
 }
 
+const maxParallelQueries = 20
+
 // QueryData handles multiple queries and returns multiple responses.
 // req contains the queries []DataQuery (where each query contains RefID as a unique identifier).
 // The QueryDataResponse contains a map of RefID to the response for each query, and each response
@@ -90,19 +90,37 @@ func New(logger log.Logger) datasource.ServeOpts {
 func (bq *BigQueryDatasource) QueryData(ctx context.Context, req *backend.QueryDataRequest) (*backend.QueryDataResponse, error) {
 	response := backend.NewQueryDataResponse()
 	mtx := &sync.Mutex{}
+	wg := &sync.WaitGroup{}
+	queries := req.Queries
 
-	ctx, cancel := context.WithTimeout(ctx, time.Minute)
-	defer cancel()
-	// Execute the queries in parallel and collect the responses.
-	for _, q := range req.Queries {
-		go func(dq backend.DataQuery) {
-			res := bq.doQuery(ctx, dq)
-			if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				mtx.Lock()
-				response.Responses[dq.RefID] = res
-				mtx.Unlock()
-			}
-		}(q)
+	log.DefaultLogger.Info("Running %d queries", len(queries))
+	// Execute the queries in parallel, up to maxParallelQueries, and collect the responses.
+	for {
+		var next = maxParallelQueries
+		if llen := len(queries); llen < maxParallelQueries {
+			next = llen
+		}
+		log.DefaultLogger.Warn("Running %d queries", next)
+
+		wg.Add(next)
+		qctx, cancel := context.WithTimeout(ctx, time.Minute)
+		for _, q := range queries[:next] {
+			go func(dq backend.DataQuery) {
+				//res := bq.doQuery(qctx, dq)
+				if !errors.Is(qctx.Err(), context.DeadlineExceeded) {
+					mtx.Lock()
+					response.Responses[dq.RefID] = backend.DataResponse{}
+					mtx.Unlock()
+				}
+				wg.Done()
+			}(q)
+		}
+		wg.Wait()
+		cancel()
+		if next != maxParallelQueries {
+			break
+		}
+		queries = queries[next:]
 	}
 
 	return response, nil
@@ -119,12 +137,12 @@ func (bq *BigQueryDatasource) doQuery(ctx context.Context, query backend.DataQue
 
 	rows, err := bq.runQuery(ctx, qm)
 	if err != nil {
-		bq.Error("Error running query: %v", err)
+		log.DefaultLogger.Error("Error running query: %v", err)
 		response.Error = err
 		return response
 	}
 	if qm.Format == "" {
-		bq.Warn("Format is empty. Defaulting to time series")
+		log.DefaultLogger.Warn("Format is empty. Defaulting to time series")
 	}
 
 	frame := data.NewFrame("response")
